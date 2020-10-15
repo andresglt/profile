@@ -1,0 +1,440 @@
+---
+title: "Ejercicio_Provincias"
+author: "Andres Gibu"
+date: "30/7/2020"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## EJERCICIO DE EVALUACIÓN I
+
+## ANÁLISIS DE COMPONENTES PRINCIPALES Y CLUSTER
+
+## 1.Calcular la matriz de correlaciones, y su representación gráfica ¿Cuáles son las variables más correlacionadas de forma inversa?
+```{r ruta y librerias , include = FALSE, message = FALSE,warning = FALSE}
+setwd("C:/Users/andre/Documents/UCM/Mineria_de_datos_II/Evaluación")
+
+## Importamos de forma manual
+library(corrplot)
+library(heatmaply)
+library(RColorBrewer)
+library(pastecs)
+library(stats)
+library(factoextra)
+library(ggplot2)
+library(lattice)
+library(readxl)
+library(stats)
+library(FactoMineR)
+library(cluster)
+library(NbClust)
+
+
+
+```
+
+```{r importa summary}
+
+Provincias<- read_excel("Provincias.xlsx",sheet = 1) 
+datos<- as.data.frame(Provincias) 
+rownames(datos)<-datos[,1] 
+datos<-datos[,-1]
+Est<-stat.desc(datos,basic=FALSE)
+knitr::kable(Est, digits =2,caption = "Estadísticos descriptivos")
+```
+De los estadísticos mostrados observamos que existe bastante dispersión entre las provincias.
+
+```{r plots}
+xyplot(PIB ~ TasaActividad, data =datos)
+xyplot(PIB ~ IPC, data =datos)
+xyplot(PIB ~ NumEmpresas, data =datos)
+```
+Sólo vemos una clara relación de tipo directo entre el número de empresas y el PIB. Con la tasa de actividad y el IPC vemos que hay relación directa también pero quizá los casos atípicos no nos permitan verla con mayor claridad.
+
+```{r matriz cor}
+R<-cor(datos, method="pearson")
+knitr::kable(R, digits =2,caption = "Correlaciones")
+corrplot(R, type="upper", order="hclust",tl.col="black", tl.srt=90)
+```
+
+
+    Las variables más correlacionadas negativamente son Natalidad con Mortalidad (-74%) y luego TasaActividad con Mortalidad (-73%)
+
+```{r pca}
+
+fit<-PCA(datos,scale.unit=TRUE,ncp=7,graph=TRUE)
+eig<-get_eigenvalue(fit)
+knitr::kable(eig, digits =2,caption = "Autovalores")
+fviz_eig(fit,addlabels=TRUE)
+fviz_eig(fit,geom="line")+theme_grey()
+```
+Vemos que la dimension 1 recoge bastante de la variabilidad con más de 60%. Viendo la gráfica podríamos tomar 3 componentes para recoger casi el 90% de la variabilidad o 4 componentes para tener poco más del 90%. 
+
+
+## 2. Realizar un análisis de componentes principales sobre la matriz de correlaciones,calculando 7 componentes. Estudiar los valores de los autovalores obtenidos y las gráficas que los resumen. ¿Cuál es el número adecuado de componentes?
+
+
+## a. Mostrar los coeficientes para obtener las componentes principales ¿Cuál es la expresión para calcular la primera Componente en función de las variables originales?
+
+```{r pca componentes elegidas}
+fit<-PCA(datos,scale.unit=TRUE,ncp=7,graph=TRUE)
+
+
+
+knitr::kable(fit$svd$V, digits =3,caption = "Autovectores")
+```
+Podemos ver las provincias de Madrid y Barcelona están bien representadas por la componente 1. Dicha componente recoge muchas de las variables, no destacando alguna en particular ya que varias tienen como coeficiente valores alrededor de 0.29.
+
+Donde: 
+CP1:0.041* Poblacion+0.110* Mortalidad+ 0.294* Natalidad+.....0.172* VS
+
+
+## b. Mostar una tabla con las correlaciones de las Variables con las Componentes Principales. Para cada Componente indicar las variables con las que está más correlacionada
+
+```{r correlaciones entre componentes y variables}
+
+var<-get_pca_var(fit)
+knitr::kable(var$cor, digits =2,caption = "Correlaciones de la CP con
+las variables")
+corrplot(var$cor,is.corr=FALSE)
+```
+  
+      Podemos ver numéricamente y gráficamente el nivel de las correlaciones donde CP1 contiene la información de las variables relacionadas a desarrollo económico y población, CP2 destaca por la relación inversa con la tasa de mortalidad y directa tasa de natalidad y con tasa de paro. CP3 tiene relación con CANE y la CP4 tiene relaciones media con IPC, Tasa Actividad y Viviendas secundarias (VS).
+
+## c. Comentar los gráficos que representan las variables en los planos formados por las componentes, intentando explicar lo que representa cada componente
+
+```{r analisis de componentes}
+# Representación gráfica variables 1 y 2
+fviz_pca_var(fit, axes = c(1, 2), col.var="cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),repel = TRUE )
+
+
+# Representación gráfica variables 3 y 4
+fviz_pca_var(fit, axes = c(3, 4), col.var="cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),repel = TRUE )
+
+```
+
+     La componente 1 representa a: Población,NumEmpresas,Industria,Construccion,CTH,Infor,AFS,APT,Ocupados,PIB,TVF (estas variables estaban muy correlacionadas entre sí)
+
+    La componente 2 a representa a:
+Tasa Paro, Natalidad, Mortalidad en menor medida  y tasa actividad
+
+    La componente 3 a representa a: 
+CANE , Tasa Paro en menor medida Tasa Actividad
+
+    La componente 4 a representa a:
+IPC y VS
+
+## d. Mostrar la tabla y los gráficos que nos muestran la proporción de la varianza de cada variable que es explicado por cada componente. ¿Cuál de las variables es la que está peor explicada?
+
+```{r variables explicadas por componentes}
+knitr::kable(var$cos2, digits =2,caption = "Cosenos al cuadrado")
+# Representación gráfica de los cosenos 
+corrplot(var$cos2,is.corr=FALSE)
+
+#Porcentaje de variabilidad explicada por las 4 CP 
+fviz_cos2(fit,choice="var",axes=1:4)
+
+```
+La variables con menos representación en las 4 componentes es IPC ya que el coseno (correlaciones al cuadrado) alcanza el 75% mientras que por ejemplo NumEmpresas alcanza casi el 100%.
+
+## e. Mostrar la tabla y los gráficos que nos muestran el porcentaje de la varianza de cada Componente que es debido a cada variable. ¿Que variables contribuyen más a cada Componente?
+
+```{r contribucion de variables a componentes}
+knitr::kable(var$contrib, digits =2,caption = "Contribuciones")
+corrplot(var$contrib,is.corr=FALSE)
+#Contribución de las variables a la Componente 1
+fviz_contrib (fit, choice="var", axes=1, top= 10)
+#Contribución de las variables a la Componente 2
+fviz_contrib (fit, choice="var", axes=2, top= 10)
+#Contribución de las variables a la Componente 3
+fviz_contrib (fit, choice="var", axes=3, top= 10)
+#Contribución de las variables a la Componente 4
+fviz_contrib (fit, choice="var", axes=4, top= 10)
+
+```
+Respecto a la componente 1 ésta se representa por 10 variables de forma casi equitativa:
+Ocupados, NumEmpresas, Poblacion,Construccion,CTH - CTH. Comercio, transporte y hostelería (nº empresas)-, AFS -AFS. Actividades financieras y de seguros (nº empresas), TVF -TVF. Censo 2011: Total viviendas familiares-, PIB, APT -APT. Actividades profesionales y técnicas (nº empresas)-, Industria.
+
+Respecto a la componente 2 en ésta destacan 5 variables: Mortalidad, Natalidad, TasaParo, IPC, Tasa Actividad.
+
+Respecto a la componente 3 en ésta destacan 1 variable: CANE -Censo Agrario Número de Explotaciones-, en menor medida le siguen: TasaParo, TasaActividad, VS -Censo 2011: Viviendas secundarias-,Nataidad, IPC, etc.
+
+Respecto a la componente 4 en ésta destacan VS -Censo 2011: Viviendas secundarias-,TasaActividad, IPC, etc.
+
+## f. Sobre los gráficos que representan las observaciones en los nuevos ejes y el gráfico Biplot., teniendo en cuenta la posición de las provincias en el gráfico ¿Comentar las provincias que tienen una posición más destacada en cada ¿componente, en positivo o negativo, ¿Qué significa esto en términos socioeconómicos para estas provincias?
+
+```{r perfiles de provincias}
+fviz_pca_ind(fit,axes = c(1, 2), col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), repel = TRUE)
+```
+Observamos que MAdrid y Barcelona destacan en la componente 1 relacionada con números de empresas y población principalmente. Se podría decir que son ciudades más desarrolladas en cuanto a esas variables.
+Luego Melilla, Ceuta, Almería son 3 provincias que destacan en la componente 2 relacionada con Mortalidad, Natalidad, TasaParo, IPC, Tasa Actividad. Se podría decir que tienen baja mortalidad con buena tasa de natalidad pero poco desarrolladas.
+
+```{r perfiles de provincias componentes 2 y 3}
+fviz_pca_ind(fit,axes = c(2, 3), col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),repel = TRUE)
+fviz_pca_ind(fit,axes = c(1, 3), col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),repel = TRUE)
+```
+Las provincias de Jaen y Valencia destacan respecto a las demás por su representación en la componente 3 relacionada con CANE -Censo Agrario Número de Explotaciones. Se podría decir que son provincias agrícolas pero Valencia es más desarrollada por su posición en el componente 1.
+
+```{r perfiles de provincias componentes 3 y 4}
+fviz_pca_ind(fit,axes = c(3, 4), col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),repel = TRUE)
+
+fviz_pca_ind(fit,axes = c(1, 4), col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),repel = TRUE)
+```
+Las provincias de Alicante y Valencia destacan en las componentes 3 y 4 donde 
+la 3 está relacionada con CANE (Censo Agrario Número de Explotaciones) y la 4 con VS (Viviendas secundarias). SE podría decir 
+Por otro lado está la provincia de Balears que tiene una representación similar en la componente 4 pero en el extremo opuesto de la componente 3.
+
+## g. Si tuviéramos que construir un índice que valore de forma conjunta el desarrollo económico de una provincia, como se podría construir utilizando una combinación lineal de todas las variables. ¿Cuál sería el valor de dicho índice en Madrid? ¿Cual sería su valor en Melilla?
+ 
+El índice podría estar representado por la componente 1 ya que esta es una representación lineal de las variables que tienen relacion con el desarrollo económico, como vimos:
+CP1:0.041* Poblacion+0.110* Mortalidad+ 0.294* Natalidad+.....0.172* VS
+
+```{r indices por provincia}
+
+ind<-get_pca_ind(fit) 
+knitr::kable(ind$coord, digits =3,caption = "Valores de los individuos en las Cp")
+
+```
+Madrid tnedría una valor de 16.778, le seguiría Barcelon con 13.683.
+Melilla tendría un valor de -2.218, es decir bajo desarrollo, comparado a la media=0
+
+## 4. Representar un mapa de calor de la matriz de datos, estandarizado y sin estandarizar
+## para ver si se detectan inicialmente grupos de provincias.
+
+```{r summary}
+tabla1<-summary(datos)
+knitr::kable(tabla1, caption = "Tabla resumen de las variables") 
+```
+
+
+```{r mapa de calor}
+heatmaply(datos, seriate = "mean", row_dend_left = TRUE,  plot_method = "plotly")
+#Al ser interactivo no se puede exportar a pdf y usar la alternativa de abajo
+#ggheatmap(as.matrix(datos),seriate="mean")
+```
+
+No apreciamos un matiz de colores, casi en todas las variables los valores están muy juntos.
+Destacan Barcelona y Madrid por sus colores muy claros en el PIB.
+
+```{r distancias}
+#Calculamos las distancias con los valores sin estandarizar #Mostramos las primeras seis filas dela matriz de distancias
+
+d <- dist(datos, method = "euclidean") # distance matrix
+d6<-as.matrix(d)[1:6, 1:6]
+knitr::kable(d6, digits =2,caption = "Distancias") 
+
+#Representamos gráficamente la matriz de distancias
+fviz_dist(d, show_labels = TRUE)
+
+#Reordenamos para agrupar las observaciones que están más próximas y visualizar los posibles clusters
+
+ggheatmap(as.matrix(d), seriate="mean")
+
+ggheatmap(as.matrix(d), seriate="OLO")
+
+#según el criterio de ward #Dibujamos el dendograma correspondiente
+
+res.hc <- hclust(d, method="ward.D2") 
+
+fviz_dend(res.hc, cex = 0.5)
+```
+Estandarizamos
+```{r estandarizando}
+#first 6 rows
+
+datos_ST <- scale(datos)
+head(datos_ST, nrow = 6)
+
+#Calculamos las distancias con los valores estandarizados
+
+d_st <- dist(datos_ST, method = "euclidean") # distance matrix
+d_st6<-as.matrix(d_st)[1:6, 1:6]
+knitr::kable(d_st6, digits =2,caption = "Distancias") 
+
+#Visualizamos
+
+fviz_dist(d_st)
+#Barcelona y MAdrid son diferentes a los demas
+
+heatmaply(as.matrix(d_st), seriate = "OLO", row_dend_left = TRUE,  plot_method = "plotly")
+
+```
+
+```{r estandarizar parte 2}
+res.hc_st <- hclust(d_st, method="ward.D2") 
+fviz_dend(res.hc_st, cex = 0.5)
+```
+
+
+## 5. Realizar un análisis Jerárquico de clusters para determinar si existen grupos de provincias con comportamiento similar.
+
+## a. A la vista del dendrograma ¿Cuántos clusters recomendarías?
+```{r recomendacion de clusters}
+#Seleccionaremos 4 grupos
+grp<-cutree(res.hc_st, k=4)
+head(grp,n=4)
+
+#Número de miembros en cada cluster
+knitr::kable(table(grp),caption="Numero de individuos por cluster")
+
+
+#podemos ver las provincias de los clusters
+rownames(datos)[grp == 1]
+rownames(datos)[grp == 2]
+rownames(datos)[grp == 3]
+rownames(datos)[grp == 4]
+
+```
+
+## b. Representar los individuos agrupados según el número de clusters elegido.
+
+```{r individuos en los clusters}
+fviz_dend(res.hc_st, k = 4, # Cut in four groups
+          cex = 0.5, # label size
+          k_colors = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"),
+          color_labels_by_k = TRUE, # color labels by groups
+          rect = TRUE) # Add rectangle around groups
+
+fviz_cluster(list(data = d_st, cluster = grp),
+             palette = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"), 
+             ellipse.type = "convex", # Concentration ellipse
+             repel = TRUE, # Avoid label overplotting (slow)
+             show.clust.cent = FALSE, ggtheme = theme_minimal())
+```
+
+Vemos cierto traslape en los clusters 2 y 3 
+
+```{r pruebas}
+# class(datos_ST)
+# 
+#datos[rownames(datos)!='Barcelona',]
+#datos[!rownames(datos)%in%c('Barcelona','Madrid'),]
+```
+
+## c. ¿Qué número óptimo de clusters nos indican los criterios Silhoutte y de Elbow?
+```{r buscando el optimo}
+
+#para clustering jeraquico:
+
+#Determinación delnúmero óptimo de clusters
+# Elbow method
+fviz_nbclust(datos_ST, hcut, method = "wss") +
+  geom_vline(xintercept =3, linetype = 2)+
+  labs(subtitle = "Elbow method")
+
+ 
+# Silhouette method
+fviz_nbclust(datos_ST, hcut, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+
+```
+
+En ambos método se ve que existen 2 cluster claramente diferenciados, quizá si retiramos a Madrid y Barcelona nos podrían salir más grupos.
+
+```{r buscando optimo sin Madrid ni Barcelona}
+datos_sin<-datos[!rownames(datos)%in%c('Barcelona','Madrid'),]
+datos_ST_sin <- scale(datos_sin)
+d_st_sin <- dist(datos_ST_sin, method = "euclidean")
+
+res.hc_st_sin <- hclust(d_st_sin, method="ward.D2") 
+fviz_dend(res.hc_st_sin, cex = 0.5)
+
+#para clustering jeraquico:
+
+#Determinación delnúmero óptimo de clusters
+# Elbow method
+fviz_nbclust(datos_ST_sin, hcut, method = "wss") +
+  geom_vline(xintercept =3, linetype = 2)+
+  labs(subtitle = "Elbow method")
+
+ 
+# Silhouette method
+fviz_nbclust(datos_ST_sin, hcut, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+```
+
+Entonces nos quedamos con 2 cluster más el cluster Barcelona-Madrid que habíamos retirado serían 3 clusters
+
+
+## d. Con el número de clusters decidido en el apartado anterior realizar un agrupamiento no jerárquico.
+
+```{r agrupamiento no jeraquico}
+RNGkind(sample.kind = "Rejection")
+set.seed(1234)
+
+km.res <- kmeans(datos_ST, 3)
+head(km.res$cluster, 20)
+
+print(km.res)
+
+```
+
+
+## i. Representar los clusters formados en los planos de las Componentes principales. Relacionar la posición de cada cluster en el plano con lo que representa cada componente principal.
+
+
+```{r visualizando clusters en los componentes}
+
+# Visualize clusters using factoextra
+fviz_cluster(km.res, datos_ST)
+```
+Apreciamos que el cluster MAdrid-Barcelona está muy a la derecha de la media en el componente 1 , esta componente estaba representado por las variables de desarrollo económico y población. Respecto a la componente 2 hay 2 grupos los que están por encima y por debajo de la media, esta componente está representado por las variables de tasa de paro y natalidad principalmente.
+
+```{r buscando optimos en kmedias}
+#Determinación delnúmero óptimo de clusters
+# Elbow method
+fviz_nbclust(datos_ST, kmeans, method = "wss") +
+  geom_vline(xintercept =3, linetype = 2)+
+  labs(subtitle = "Elbow method")
+
+# Silhouette method
+fviz_nbclust(datos_ST, kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+
+```
+
+
+## ii. Evaluar la calidad de los clusters
+
+```{r evaluando calidad de clusters}
+sil <- silhouette(km.res$cluster, dist(datos_ST))
+rownames(sil) <- rownames(datos)
+head(sil[, 1:3])
+fviz_silhouette(sil)
+```
+
+En el cluster 1 encontramos provincias con silueta negativa por lo que podríamos pensar que están mal clasificadas. Las provincias de Albacete, Navarra, Alava y otra más están en la media del componente 2 y podrían estar generando dichas siluetas.
+
+Probemos otro número de k.
+
+```{r probando otro k}
+RNGkind(sample.kind = "Rejection")
+set.seed(1234)
+km.res_reducido <- kmeans(datos_ST, 2)
+fviz_cluster(km.res_reducido, datos_ST)
+
+
+sil <- silhouette(km.res_reducido$cluster, dist(datos_ST))
+rownames(sil) <- rownames(datos)
+fviz_silhouette(sil)
+```
+Con k=2 no hay siluetas negativas sin embargo tener sólo 2 clusters puede resultar en ser poco útil por lo que caracterizaremos 3.
+
+## e. Explicar las provincias que forman cada uno de los clusters y comentar cuales son las características socioeconómicas que las hacen pertenecer a dicho cluster.
+
+```{r caracterizaciones}
+EsT_Clus<-aggregate(datos, by=list(km.res$cluster),mean)
+knitr::kable(EsT_Clus, digits =2,caption = "Estadísticos de los clusters") 
+
+```
+Finalmente vemos que el cluster 3 tiene alta población y altos números de empresas de los diferentes rubros. Al ser tan marcada las diferencias con respecto al resto pareciera que no hubiesen diferencia significativa entre los cluster 1 y 2 pero sí las hay en todas las variables (donde hay poca es en tasaactividad 59.86 vs 55.74) por lo que se debe tener cuidado en este tipo de casos.
+
+
+
+
+
