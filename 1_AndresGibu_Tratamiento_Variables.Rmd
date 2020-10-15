@@ -1,0 +1,472 @@
+---
+title: "Mineria de Datos y Modelacion Predictiva - Guillermo Villarino"
+author: "AndreGibu"
+date: "30/6/2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Análisis Descriptivo de datos
+
+En esta sección se realizará:
+
+Análisis descriptivo del conjunto de datos. Número de observaciones, número y naturaleza de variables,
+datos erróneos etc. Distribuciones de variables.
+
+Análisis de valores extremos (outliers). Decisiones
+
+Análisis de valores perdidos. Imputaciones.
+
+Transformaciones de variables y relaciones con las variables objetivo.
+
+```{r carga librerias, echo=FALSE}
+# Cargo las funciones que voy a utilizar despu?s
+source("C:/Users/andre/Documents/Mineria_de_datos/Material Campus_Mayo2020/Funciones_R.R")
+
+paquetes(c('questionr','psych','car','corrplot','readxl','ggplot2','grid','gridExtra'))
+
+library(xts)
+library(forecast)
+# Cargo las librerias que me van a hacer falta
+library(questionr)
+library(psych)
+library(car)
+library(corrplot)
+
+```
+
+
+```{r lectura e inspeccion inicial}
+
+# Lectura del archivo
+setwd("C:/Users/andre/Documents/Mineria_de_datos/tarea/")
+Radiacion2005 <- readRDS("Radiacion2005.RDS")
+
+# Inpsección rápida
+str(Radiacion2005)
+
+summary(Radiacion2005)
+```
+Observamos que en las variables objetivos TD y PicoRad hay 1146 valores NA's que son los que tomaremos como data para test.
+
+La variable Temp tiene valores negativos lo que debe ser un error
+
+La variables Lluvia tiene pocos valores ya que 1st Qu., Median y 3er Qu. son 0. Además que los valores que tiene están alejados de cero.
+
+La variable Irrad.Solar tiene mucha diferencia entre su mediana y media lo que hace pensar que tiene valores muy altos a la derecha de la mediana.
+
+## Visualización de datos temporales
+
+```{r visualizacion de datos temporales}
+# crear serie temporal periodo completo
+Rad5_tmp<-xts(as.matrix(Radiacion2005[,-1]), order.by = Radiacion2005$Fecha)
+# Representación de variables objetivo
+autoplot(Rad5_tmp$TD)
+
+
+autoplot(Rad5_tmp$PicoRad) # Es una variable binaria...
+
+```
+
+Observamos ausencia de datos en los días previos a julio, diciembre y enero 2006
+
+
+#Análisis descriptivo del conjunto de datos
+
+```{r valores dstintos}
+# Cuento el número de valores diferentes para las numéricas
+sapply(Filter(is.numeric, Radiacion2005),function(x) length(unique(x))) 
+```
+La variable PicoRad es objetivo y no será considerada numérica.
+
+La variables Lluvia es la que menos valores tiene pero es mayor a 10 por lo que la conservamos numérica
+
+
+El la función summary ya habíamos observadr a la función Lluvia pero también a la variable  Irrad.solar 
+
+```{r de numerica a categorica}
+Radiacion2005["PicoRad"]<-lapply(
+  subset(Radiacion2005, select =c(PicoRad)), factor) 
+```
+
+
+```{r analisis descriptivo}
+
+# Boxplot para las variables Luvia y Irrad.solar
+boxplot(Radiacion2005$Luvia)
+boxplot(Radiacion2005$Irrad.solar)
+
+
+
+```
+La variables Luvia tiene valores concentrados en 0 y pocos valores lejos del 0, podríamo agrupar en grupos.
+
+Parece que la variables Irrad.solar tienen una distribución muy asimétrica hacia la izquierda, lo que revela la presencia de valores minoritarios que bien podrían ser outliers en la aparte derecha.
+
+```{r num missings}
+# Preguntamos si hay missings en el archivo excluyendo data test
+
+any(is.na(Radiacion2005[which(!is.na(Radiacion2005$TD)),]))
+
+#write.csv(Radiacion2005,"Radiacion2005.csv")
+                        
+```
+Ya habíamos observados muchos valores nulo y no sólo en la data de test.
+
+
+```{r generar archivo input}
+
+#Indico la variableObj, el ID y las Input (los atípicos y 
+# los missings se gestionan sólo de las input)
+varObjCont<-Radiacion2005$TD
+varObjBin<-Radiacion2005$PicoRad
+input<-as.data.frame(Radiacion2005[,-c(2,11)])
+```
+
+
+
+  **Crea una variable categórica a partir de la variable “Luvia” que tome el valor 0 cuando la variable sea 0; y 1, en otro caso. Rechaza la variable original.**
+  
+  
+  
+```{r transformacion variable Luvia}
+
+hist(input$Luvia)
+#Revisando la distribución de los datos se consideró crear 
+#un variables para cuando no llueve y dos para cuando llueve
+
+input$Luvia_bin<- (replace(input$Luvia, which(input$Luvia == 0), 0))
+input$Luvia_bin<- (replace(input$Luvia_bin, which(input$Luvia_bin > 0 & input$Luvia_bin <= 1.1), 1))
+input$Luvia_bin<- (replace(input$Luvia_bin, which(input$Luvia_bin > 1.1),2))
+
+input$Luvia_bin<-as.factor(input$Luvia_bin)
+
+levels(input$Luvia_bin)<-c('no_llueve','llueve','llueve_mas')
+ 
+freq(input$Luvia_bin)
+
+input<-subset(input, select =  -c(Luvia))
+ 
+```
+
+
+```{r atipicos}
+
+# Distribuciones de numéricas
+psych::describe(Filter(is.numeric, input)) #hay otro describe en otra libreria
+
+
+# % de atipicos por variable
+sapply(Filter(is.numeric, input),function(x) atipicosAmissing(x)[[2]])/nrow(input)
+
+# Modifico los atípicos como missings
+input[,as.vector(which(sapply(input, class)=="numeric"))]<-sapply(Filter(is.numeric, input),function(x) atipicosAmissing(x)[[1]])
+
+#Cuento ahora los registros con missings
+sum(is.na(input))
+
+```
+Observamos que los porcentaje de atipicas por variables es poca, por lo cual no agrupamos categorias y reemplazamos por missings.
+
+```{r comprobar categorias factores}
+# Ver el reparto de las categorìas de las variables cualitativas
+lapply(Filter(is.factor,input),questionr::freq)                                                                                                                           
+
+```
+Poca presencia de valores diferentes a 'no_llueve' pero podría haber un patrón cuando llueve 
+
+
+```{r valores fuera de rango a missing}
+ 
+
+# Missings no declarados variables cuantitativas (-1, 99999)
+ input$Temp<-replace(input$Temp,which( input$Temp < 0),NA)
+
+```
+
+Imputacion a Misssings
+
+Primero verificamos si hay patrones
+
+
+
+```{r missings, warning=F }
+
+## MISSINGS
+# Patrones de missings
+corrplot(cor(is.na(input[colnames(input)[colSums(is.na(input))>0]])),method = "ellipse",type = "upper") 
+
+#is.na(input[colnames(input)[colSums(is.na(input))>0]])
+
+#length(input$Irrad.solar[is.na(input$Irrad.solar)==TRUE])
+
+#no funciona quitar misssings
+# corrplot(cor( Filter(is.numeric,input)),method = "ellipse",type #= "upper") 
+
+# corrplot(cor(!is.na(Filter(is.numeric,input))),method = "ellipse",type = "upper") 
+
+```
+Encontramos correlacion entre las variables:
+
+Desc.Rn y Irrad.Solar
+Radon con Pres, Temp, HR
+
+```{r missings tratamiento}
+#Proporción de missings por variable y observación
+input$prop_missings<-apply(is.na(input),1,mean)
+
+summary(input$prop_missings)
+
+prop_missingsVars<-apply(is.na(input),2,mean)
+
+#Actualizar las observaciones de las variables objetivo
+
+# length(varObjBin)#8760
+# summary(varObjBin)
+# which (is.na(varObjBin)) 
+# length(which (is.na(varObjBin)) )#1146
+varObjBin<-varObjBin[input$prop_missings<0.5]
+# length(which (is.na(varObjBin[input$prop_missings<0.5])) )
+# length(varObjBin)#8623
+# length(which (is.na(varObjBin)) )#1146
+varObjCont<-varObjCont[input$prop_missings<0.5]
+
+#write.csv(input,"input.csv")
+
+#elimino las observaciones y las variables con más de la mitad de missings
+input <- subset(input, prop_missings< 0.5, select=names(prop_missingsVars)[prop_missingsVars<0.5])
+
+#write.csv(input_0,"input_0.csv")
+
+# input$prop_missings[input$prop_missings >= 0.5]
+# 
+# write.csv(input$prop_missings < 0.5,"input_filtrado.csv")
+
+# 
+# varObjBin<-varObjBin[input$prop_missings < 0.5]
+# varObjBin<-varObjBin[input$prop_missings<0.5]
+# 
+# class(varObjBin)
+# class(varObjCont)
+# 
+# length(varObjBin[input$prop_missings<0.5])
+# 
+# length(varObjBin)
+# length(varObjCont)
+# nrow(input)
+
+ 
+
+dim(na.omit(input))
+dim(input)
+```
+```{r copia}
+#Separo una copia para aplicar otra tecnica de imputacion
+#luego veremos para cada variable cual tecnica contribuye más
+input_2<-input
+
+```
+
+
+```{r imputacion, , warning=F}
+
+## Imputaciones
+# Imputo todas las cuantitativas, seleccionar el tipo de #imputación: media, mediana o aleatorio
+
+input[,as.vector(which(sapply(input, class)=="numeric"))]<-sapply(
+  Filter(is.numeric, input),function(x) Hmisc::impute(x,"random"))
+
+
+# Imputo todas las cualitativas, seleccionar el tipo de #imputación: moda o aleatorio
+# Si solo se quiere imputar una,variable<-ImputacionCuali(variable,"moda")
+
+input[,as.vector(which(sapply(input, class)=="factor"))]<-sapply(Filter(is.factor, input),function(x) ImputacionCuali(x,"aleatorio"))
+
+
+# A veces se cambia el tipo de factor a character al imputar, así #que hay que indicarle que es factor
+
+input[,as.vector(which(sapply(input, class)=="character"))] <- lapply(
+  input[,as.vector(which(sapply(input, class)=="character"))] , factor)
+
+# Reviso que no queden datos missings
+
+summary(input)
+
+any(is.na(input))
+
+# Es posible que quede algún missing sin imputar en variable #numéricas...algún pequeño fallo en la función. Pasaremos otra #vez el codigo para volver a imputar.
+
+if (any(is.na(input))){
+input[,as.vector(which(sapply(input, class)=="numeric"))]<-sapply(
+  Filter(is.numeric, input),function(x) ImputacionCuant(x,"aleatorio"))
+# Reviso que no queden datos missings
+summary(input)
+}
+
+#Podemos graficar el dataset (opción 1 con boxplot para las #continuas)
+
+input$Luvia_bin<-as.factor(input$Luvia_bin)
+
+pl_box<-dfplot_box(input)
+
+# Crear rejilla gráfica de 2x2
+marrangeGrob(pl_box, nrow=2, ncol=2)
+
+
+#Podemos graficar el dataset (opción 2 con histograma para las #continuas)
+pl_his<-dfplot_his(input)
+
+# Crear rejilla gráfica de 2x2
+marrangeGrob(pl_his, nrow=2, ncol=2)
+
+
+
+```
+```{r 2da tecnica de imputacion}
+
+# sapply(input_2,class)
+# 
+# sapply(Filter(is.numeric, input_2),function(x) length(unique(x))) 
+
+#sapply(input_2,function(x) sum(is.na(x)))
+
+
+input_2_modif<- Hmisc::aregImpute(~ Radon + Desc.Rn + Pres + Temp + HR +
+Vviento + Irrad.solar + Luvia_bin, data = input_2, n.impute = 5)
+
+#apply(input_2_modif$imputed$Radon,1,mean)
+
+input_2$Radon[which(is.na(input_2$Radon))]<-apply(input_2_modif$imputed$Radon,1,mean)
+
+input_2$Desc.Rn[which(is.na(input_2$Desc.Rn))]<-apply(input_2_modif$imputed$Desc.Rn,1,mean)
+
+input_2$Pres[which(is.na(input_2$Pres))]<-apply(input_2_modif$imputed$Pres,1,mean)
+
+input_2$Temp[which(is.na(input_2$Temp))]<-apply(input_2_modif$imputed$Temp,1,mean)
+
+input_2$HR[which(is.na(input_2$HR))]<-apply(input_2_modif$imputed$HR,1,mean)
+
+input_2$Vviento[which(is.na(input_2$Vviento))]<-apply(input_2_modif$imputed$Vviento,1,mean)
+
+input_2$Irrad.solar[which(is.na(input_2$Irrad.solar))]<-apply(input_2_modif$imputed$Irrad.solar,1,mean)
+
+```
+
+```{r base con 2do metodo de imputacion}
+ 
+input_2<-cbind(input_2$Radon,input_2$Desc.Rn,input_2$Pres,input_2$Temp,input_2$HR,input_2$Vviento,input_2$Irrad.solar)
+
+colnames(input_2)<-c('Radon_2','Desc.Rn_2','Pres_2','Temp_2','HR_2',
+                     'Vviento_2','Irrad.solar_2')
+
+```
+
+
+```{r tratamiento de fecha}
+
+# sapply(input_2,class)
+
+#input<-readRDS("datosTarea")
+
+#Realizaremos un tratamiento a la variables fecha
+
+#Extrae mes
+input$mes<-format(input$Fecha,"%m")
+
+#Extrae dia
+input$dia<-as.numeric(as.factor(format(input$Fecha,"%d")))
+
+#Agrupamos cada 7 dias
+input$semana_del_mes<-dplyr::case_when(
+                      input$dia >= 1 & input$dia <=7     ~ "semana_1",
+                      input$dia > 7 & input$dia <=14     ~ "semana_2",
+                      input$dia > 14 & input$dia <=21     ~ "semana_3",                       input$dia > 21 & input$dia <=31     ~ "semana_4",           
+                      TRUE                     ~ "undetermined"
+       )
+
+#Quitamos el día, muchos valores para ser categórica
+input<-subset(input, select =  -c(dia))
+
+
+input$mes<-as.factor(input$mes)
+input$semana_del_mes<-as.factor(input$semana_del_mes)
+
+#unique(input$semana_del_mes)
+```
+
+```{r revisando variables nuevamente}
+
+#Veo que prop_missings tiene pocos datos
+unique(input$prop_missings)
+
+input$prop_missings_bin<-as.factor(input$prop_missings)
+
+unique(input$prop_missings_bin)
+
+levels(input$prop_missings_bin)<-c('0_percent','11_percent','22_percent','33_percent','44_percent')
+
+input$prop_missings_bin<-factor(replace(input$prop_missings_bin, which(input$prop_missings_bin =='0'), '0_percent'))
+input$prop_missings_bin<-factor(replace(input$prop_missings_bin, which(input$prop_missings_bin =='	0.111111111111111'), '11_percent'))
+input$prop_missings_bin<-factor(replace(input$prop_missings_bin, which(input$prop_missings_bin =='0.222222222222222'), '22_percent'))
+input$prop_missings_bin<-factor(replace(input$prop_missings_bin, which(input$prop_missings_bin =='0.333333333333333'), '33_percent'))
+input$prop_missings_bin<-factor(replace(input$prop_missings_bin, which(input$prop_missings_bin =='0.444444444444444'), '44_percent'))
+freq(input$prop_missings_bin)
+
+prop_missings<-input$prop_missings
+input<-subset(input, select =  -c(prop_missings))
+
+```
+
+```{r evalúo que imputacion es mejor}
+
+input<-cbind(input,input_2)
+
+#Obtengo la importancia de las variables. Falla si hay alguna variable cuantitativa con menos de 6 valores diferentes
+graficoVcramer(input,varObjBin)
+graficoVcramer(input,varObjCont)
+
+
+#En este punto elegiremos para cada variable uno de los dos métodos
+#que utilicemos
+
+#respecto a varObjBin
+# Radon_2 mejor que Radon
+# Desc.Rn_2 mejor Desc.Rn
+# Temp mejor Temp_2
+# Press_2 mejor que Pres
+# Vviento mejor que Vviento_2
+# HR_2 mejor HR
+# Irrad.solar mejor que Irrad.solar_2
+
+ 
+input_bin<-subset(input, select =  -c(Radon,Desc.Rn,Temp_2,Pres,Vviento_2,HR,Irrad.solar_2))
+
+#respecto a varObjCont
+# Temp mejor Temp_2
+# Radon_2 mejor que Radon
+# Desc.Rn_2 mejor Desc.Rn
+# HR_2 mejor HR
+# Press_2 mejor que Pres
+# Irrad.solar_2 mejor que Irrad.solar
+# Vviento mejor que Vviento_2
+
+
+input_cont<-subset(input, select =  -c(Temp_2,Radon,Desc.Rn, HR,Pres,Irrad.solar,Vviento_2))
+
+
+```
+
+ 
+
+```{r exportando}
+saveRDS(cbind(varObjBin,input_bin),"datosTareaBin")
+
+saveRDS(cbind(varObjCont,input_cont),"datosTareaCont")
+
+```
+

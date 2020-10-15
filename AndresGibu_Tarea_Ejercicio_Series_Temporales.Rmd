@@ -1,0 +1,429 @@
+---
+title: "AndresGibu_Tarea_Ejercicio_Series_Temporales"
+author: "Andres Gibu"
+date: "3/8/2020"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## EJERCICIO DE EVALUACIÓN II
+
+## ANÁLISIS Y PREDICCIÓN DE SERIES TEMPORALES
+
+```{r importando}
+setwd("C:/Users/andre/Documents/UCM/Mineria_de_datos_II/Evaluación")
+library(readxl)
+#Construcción de gráficas de series juntas
+library(ggplot2)
+library(ggfortify)
+viajeros_pais_vasco<- read_excel("2074.xlsx" , sheet='Hoja1') 
+
+```
+
+
+## Índice:
+## 1. Introducción: Presentación de la serie a analizar. (1)
+
+La siguiente base proviene del INE - ine.es - y representa al número de viajeros del País Vasco en el lapso de enero de 1991 hasta mayo 2020.
+De la serie retiraremos los meses del 2020 por haberse afectado por la pandemia y ya no representaría la actividad turística normal.
+
+```{r presentacion}
+viajeros<-ts(viajeros_pais_vasco[,-1], start = c(1999 ,1), frequency=12)
+#Retiraremos los meses afectados por el covid-19
+viajeros<-window(viajeros,start=c(1999 ,1), end=c(2019, 12))
+autoplot(viajeros)+ ggtitle("Viajeros Pais Vasco") + xlab("mes") + ylab("numero de viajeros")
+
+
+```
+La serie es claramente no estacionaria, con tendencia creciente y estacional de 12 meses.
+
+## 2. Representación gráfica y descomposición estacional (si tuviera comportamiento
+## estacional). (1.5)
+
+```{r revisando estacionalidad}
+#Guardamos los componentes de la descomposición estacional en
+viajeros_Comp<- decompose(viajeros,type=c("multiplicative"))
+#Representamos los componentes de la serie obtenidos.
+autoplot(viajeros_Comp)
+
+
+library(forecast)
+ggseasonplot(viajeros, year.labels=TRUE, year.labels.left=TRUE) +
+ylab("Número") +
+ggtitle("Seasonal plot: viajeros en País Vasco")
+
+
+ggsubseriesplot(viajeros) +
+  ylab("numero de viajeros") +
+  ggtitle("Viajeros Pais Vasco")
+```
+
+Vemos que no es estacionaria porque no tiene media constante, tiene tendencia creciente (trend) y es estacional con periodo 12 (seasonal). 
+
+El año con más viajeros fue 2019 justamente al ser tendencia creciente se da esto.
+
+En el tercer gráfico podemos apreciar que el mes con más viajes es agosto y también se aprecia la estacionalidad
+
+## 3. Para comprobar la eficacia de los métodos de predicción que vamos a hacer en los siguientes apartados reservamos los últimos datos observados (un periodo en las
+## series estacionales o aproximadamente 10 observaciones) para comparar con las
+## predicciones realizadas por cada uno de los métodos. Luego ajustamos los modelos
+## sobre la serie sin esos últimos datos en los siguientes apartados
+
+
+```{r reserva de datos}
+# reservamos el ultimo año para comparar las prediciones
+viajeros_train <- window(viajeros, end=c(2018,12))
+#Vamos a predecir los valores que hemos reservado para test
+h <- length(viajeros) - length(viajeros_train)
+print(h)
+```
+
+## 4. Encontrar el modelo de suavizado exponencial más adecuado. Para dicho modelo,
+## representar gráficamente la serie observada y la suavizada con las predicciones para
+## un periodo que se considere adecuado. (2)
+
+```{r buscando modelo}
+viajeros_sh <- hw(viajeros_train,seasonal="multiplicative", h)
+autoplot(viajeros_sh, main="Serie Viajeros del Pais Vasco con suavizado")
+print(viajeros_sh)
+serie_predicha_2019<-as.data.frame(viajeros_sh)
+
+autoplot(viajeros, main="Serie Viajeros del Pais Vasco original")
+print(as.data.frame(window(viajeros, start=c(2019,1))))
+serie_original_2019<-as.data.frame(window(viajeros, start=c(2019,1)))
+library(Metrics)
+rmse(serie_predicha_2019$`Point Forecast`, serie_original_2019$Viajeros)
+
+
+
+```
+
+Comparamos PrintedForecast con la serie Viajeros y vemos que se aproximan bastante (RMSE=9672). Asimismo en la gráfica de serie podemos apreciar lo mismo.
+
+# 5. Representar la serie y los correlogramas. Decidir que modelo puede ser ajustado.
+# Ajustar el modelo adecuado comprobando que sus residuales están incorrelados.
+# (Sintaxis, tablas de los parámetros estimados y gráficos) (3)
+
+```{r serie y correlalogramas}
+
+autoplot(viajeros_train)
+#Calculamos las autocorrelaciones simples hasta el retardo 48
+ggAcf(viajeros_train, lag=48)
+#Calculamos las autocorrelaciones parciales hasta el retardo 48
+ggPacf(viajeros_train, lag=48)
+2.
+```
+En el correlalograma simple vemos que casi no decrece por lo que inferimos alta autocorrelación. La autocorrelación se da en los periodos 1 a 4 y luego del 8 al 12.
+En el correlalograma parcial ratificamos las conclusiones, vemos que hay alta correlacion hasta el periodo 13 por lo que podríamos decir que hay estacionalidad de 12 meses. 
+Esto lo vimos en las gráficas por años donde la serie se incrementaba hasta el mes 8 y luego decrecia hasta el fin de año.
+
+A continuación veamos como nos va con una diferenciación:
+
+```{r serie y correlalogramas diferenciación con el mes siguiente}
+
+autoplot(diff(viajeros_train))
+ggAcf(diff(viajeros_train), lag=48)
+ggPacf(diff(viajeros_train), lag=48)
+ 
+```
+La serie oscila alrededor de una media pero aún presenciamos autocorrelaciones a pesar de la diferenciación de un periodo con el anterior
+
+A continuación veamos una diferenciación estacional:
+
+```{r serie y correlalogramas diferenciación a 12 meses}
+
+autoplot(diff(viajeros_train,12),main="Serie diferenciada a 12 meses")
+ggAcf(diff(viajeros_train,12), lag=48)
+ggPacf(diff(viajeros_train,12), lag=48)
+```
+Luego de aplicar la diferenciación de 12 meses, hemos quitado la estacionalidad. EL correlalograma simple mejora ya que decrece más rápidamente y el correlalograma parcial indica que hay autocorrelación hasta el periodo 2 más una débil en el tres -AR(3)- y en cuanto a la estacionalidad hay picos cada 12 meses hasta el mes 24 -MA(2).
+
+Con ello ajustaremos a un modelo ARIMA del tipo (3,0,0)(0,1,2)
+
+
+
+```{r ajuste manual}
+#Ajuste del ARIMA(3,0,0)(0,1,2)
+fitvviajeros <- Arima((viajeros_train),c(3,0,0),seasonal=c(0,1,2))
+checkresiduals(fitvviajeros)
+fitvviajeros
+ 
+```
+
+El p-value es pequeño, quizá no está ajustando muy bien y el Alkaike para diferenciación AICc es alto.
+La gráfica de ACF para los residuos todavía tiene picos que salen del intervalo de confianza.
+
+Veamos con la función auto.arima
+
+
+```{r ajuste automatico}
+fitvviajeros2 <- auto.arima((viajeros_train), seasonal=TRUE,stepwise=FALSE, approximation=FALSE)
+checkresiduals(fitvviajeros2)
+fitvviajeros2
+
+```
+
+Mejoró ligeramente pero aún no es sufiencite para obtener residuos dentro del intervalo de confianza.
+
+Vemos cómo nos va reduciendo variabilidad, empleamos primero un logaritmo:
+
+```{r reduciendo variabilidad y diferenciando}
+cbind("Número de viajeros" = viajeros_train,
+      "Logs" = log(viajeros_train),
+      "Diferencia estacional de los logaritmos" =
+        diff(log(viajeros_train),12),
+      "Doble Diferencia estacional de los logaritmos" =
+        diff(diff(log(viajeros_train),12),1)) %>%
+  autoplot(facets=TRUE) +
+    xlab("Year") + ylab("") +
+    ggtitle("Número mensual de Viajeros es Pais Vasco")
+```
+Nos apoyaremos en unos test para inferir si corresponde hacer diferenciaciones:
+
+```{r probando los test de necesidad de diferenciacion}
+
+library(urca)
+viajeros_train %>% ur.kpss() %>% summary()
+
+#Revisamos si es necesaria una diferenciacion estacional
+viajeros_train %>% log() %>% nsdiffs()
+#[1] 1
+
+#Revisamos si es necesaria una diferenciacion con el periodo anterior luego de aplicar diferenciacion estacional
+viajeros_train %>% log() %>% diff(lag=12) %>% ndiffs()
+#[1] 0
+
+# viajeros_train %>% log() %>% ndiffs()
+# #[1] 1
+# viajeros_train %>% log() %>% diff(lag=1) %>% nsdiffs() 
+# #[1] 1
+```
+
+Claramente la data es no estacionaria y el test lo comprueba.
+Respecto a la necesidad de diferenciación estacional sobre el logaritmo de la serie, sí es necesaria al tener un estadístico >0.64
+Rescto a la necesidad de hacer una diferenciación siguiente no es necesaria
+
+
+```{r autocorrelalogramas de serie sobre los logaritmos}
+
+viajeros_train_log<-log(viajeros_train)
+
+autoplot(viajeros_train_log)
+ggAcf(viajeros_train_log, lag=48)
+ggPacf(viajeros_train_log, lag=48)
+```
+Aplicaremos una diferenciacion estacional luego de reducir la variabilidad:
+
+```{r autocorrelalogramas de serie con diferenc estacional sobre los logarit}
+
+viajeros_train_ajustada<-diff(viajeros_train_log,12)
+
+autoplot(viajeros_train_ajustada)
+ggAcf(viajeros_train_ajustada, lag=48)
+ggPacf(viajeros_train_ajustada, lag=48)
+```
+El ajuste manual de la serie:
+
+```{r ajuste manual sobre logaritmo de la serie}
+#Ajuste del ARIMA(2,0,0)(0,1,2)
+fitvviajeros <- Arima((viajeros_train_log),c(2,0,0),seasonal=c(0,1,2))
+checkresiduals(fitvviajeros)
+fitvviajeros
+ 
+```
+Con el Modelo ARima propuesto se logró un bajo AICc por lo que se podría tomar este modelo por encima del modelo que se realizó sin quitar variabilidad con logaritmos.
+
+Ahora utilizaremos la función auto.arima
+
+
+```{r ajuste automatico sobre logaritmo de la serie}
+fitvviajeros2 <- auto.arima(viajeros_train_log, seasonal=TRUE,stepwise=FALSE, approximation=FALSE)
+checkresiduals(fitvviajeros2)
+fitvviajeros2
+
+```
+Obtuvimos un p-value mayor que el manual (bastante mayor también al estadístico de 0.05 con los que los residuos están incorrelados) y el AICc un poco menor (-698.25 vs -687.16 con lo que el ajuste es mejor). La serie de residuos tiene menos picos que caen fuera del intervalo de confianza (2 vs 3 picos).
+
+A continuación veamos cómo nos va con una transformación de boxcox en vez de usar logaritmo:
+
+```{r probando con box-cox}
+lambda <- BoxCox.lambda(viajeros_train)
+
+viajeros_train_boxcox<-BoxCox(viajeros_train,lambda)
+
+autoplot(viajeros_train_boxcox)
+ggAcf(viajeros_train_boxcox, lag=48)
+ggPacf(viajeros_train_boxcox, lag=48)
+```
+Veamos los test para diferenciaciones:
+
+```{r probando los test de necesidad de diferenciacion sobre transformada}
+
+library(urca)
+viajeros_train %>% ur.kpss() %>% summary()
+
+#Revisamos si es necesaria una diferenciacion estacional
+viajeros_train_boxcox %>% nsdiffs()
+#[1] 1
+
+#Revisamos si es necesaria una diferenciacion con el periodo anterior luego de aplicar diferenciacion estacional
+viajeros_train_boxcox %>% diff(lag=12) %>% ndiffs()
+#[1] 0
+
+# viajeros_train %>% log() %>% ndiffs()
+# #[1] 1
+# viajeros_train %>% log() %>% diff(lag=1) %>% nsdiffs() 
+# #[1] 1
+```
+Respecto a la necesidad de diferenciación estacional sobre la transformada de la serie, sí es necesaria al tener un estadístico >0.64
+Rescto a la necesidad de hacer una diferenciación siguiente no es necesaria
+
+Veamos correlalogramas de la serie con diferenciacion estacional:
+
+```{r autocorrelalogramas de serie con diferenc estacional sobre transformada}
+viajeros_train_boxcox_ajustada<-diff(viajeros_train_boxcox,12)
+
+autoplot(viajeros_train_boxcox_ajustada)
+ggAcf(viajeros_train_boxcox_ajustada, lag=48)
+ggPacf(viajeros_train_boxcox_ajustada, lag=48)
+```
+
+Ajuste manual:
+
+```{r ajuste manual sobre transformacion de la serie}
+#Ajuste del ARIMA(2,0,0)(0,1,2)
+fitvviajeros_boxcox <- Arima((viajeros_train_boxcox),c(2,0,0),seasonal=c(0,1,2))
+checkresiduals(fitvviajeros_boxcox)
+fitvviajeros_boxcox
+ 
+```
+
+Vemos que el p-value es bastante mayor a 0.05 y el AICc mejoró respecto a el mismo análisis sobre transformación log
+
+
+Ahora utilizaremos la función auto.arima
+
+
+```{r ajuste automatico sobre transfor de la serie}
+fitvviajeros2_boxcox <- auto.arima(viajeros_train_boxcox, seasonal=TRUE,stepwise=FALSE, approximation=FALSE)
+checkresiduals(fitvviajeros2_boxcox)
+fitvviajeros2_boxcox
+
+```
+EL p-value solo pasa la prueba de residuos incorrelados al 0.01 pero tiene mejor AICc.
+Finalmente veremos en el RMSE a quien le va mejor.
+
+## 6. Escribir la expresión algebraica del modelo ajustado con los parámetros estimados.
+## (1)
+
+# PAra el modelo auto arima obtenido despues de transformación con lambda:
+ARIMA(1,0,1)(0,1,2)[12]
+
+(1-0.9347B)(1-B^12) {boxcox(xt,lambda)}=(1-0.5235B) (1 -0.1590B^24) Zt
+
+(1-B^12-0.9347B+0.9347B^13)  {boxcox(xt,lambda)}=(1-0.1590B^24-0.5235B+0.0832365B^25)Zt 
+
+{boxcox(xt,lambda)}-{boxcox(xt,lambda)}[t-12]-0.9347{boxcox(xt,lambda)}[t-1]+0.9347{boxcox(xt,lambda)}[t-13]=Zt -0.1590Zt[t-24]-0.5235Zt[t-1]+0.0832365Zt [t-25]
+
+# TAmbién hacemos pAra el modelo auto arima obtenido despues de transformación logaritmica:
+ARIMA(3,0,0)(1,1,1)[12]
+
+(1-0.1908B^12) (1-0.3734B-0.3475B^2-0.1067B^3) (1-B^12) logXt = (1-0.8471B^12) Zt
+
+(1-0.1908B^12)(1-0.3734B-0.3475B^2-0.1067B^3)(logXt-X[t-2])=Zt-0.847Z[t-12]
+
+(1-0.1908B^12)(logXt-0.3734logX[t-1]-0.3475logX[t-2]-0.1067logX[t-3])=Zt-0.847Z[t-12]
+
+logXt-0.3734logX[t-1]-0.3475logX[t-2]-0.1067logX[t-3]-(0.1908logX[t-12]-0.1908x0.3475logX[t-14]-0.1908x0.1067logx[t-15])=Zt-0.847Z[t-12]
+
+logXt-0.3734logX[t-1]-0.3475logX[t-2]-0.1067logX[t-3]-0.1908logX[t-12]+0.066303logX[t-14]+0.02035836logx[t-15])=Zt-0.847Z[t-12]
+
+logXt=0.3734logX[t-1]+0.3475logX[t-2]+0.1067logX[t-3]+0.1908logX[t-12]-0.066303logX[t-14]-0.02035836logx[t-15]+Zt-0.847Z[t-12]
+
+Xt=X[t-1]^0.3734+X[t-2]^0.3475+X[t-3]^0.1067+X[t-12]^0.1908+X[t-14]^-0.066303+X[t-15]^-0.0203583+Zt'Z'[t-12]^-0.847
+
+## 7. Calcular las predicciones y los intervalos de confianza para las unidades de  tiempo
+## que se considere oportuno, dependiendo de la serie, siguientes al último valor
+## observado. Representarlas gráficamente. (1)
+```{r predicciones}
+autoplot(forecast(fitvviajeros2),h=12)
+
+predi3_prima<-forecast(fitvviajeros)
+cbind("prediccion" =exp(predi3_prima$mean),
+"L" = exp(predi3_prima$lower),
+"U" = exp(predi3_prima$upper)) %>%print()
+
+predi3<-forecast(fitvviajeros2)
+cbind("prediccion" =exp(predi3$mean),
+"L" = exp(predi3$lower),
+"U" = exp(predi3$upper)) %>%print()
+
+
+autoplot(forecast(fitvviajeros2_boxcox),h=12)
+
+predi4_prima<-forecast(fitvviajeros_boxcox)
+cbind("prediccion" =(predi4_prima$mean*lambda+1)^(1/lambda),
+"L" = (predi4_prima$lower*lambda+1)^(1/lambda),
+"U" = (predi4_prima$upper*lambda+1)^(1/lambda)) %>%print()
+
+predi4<-forecast(fitvviajeros2_boxcox)
+cbind("prediccion" =(predi4$mean*lambda+1)^(1/lambda),
+"L" = (predi4$lower*lambda+1)^(1/lambda),
+"U" = (predi4$upper*lambda+1)^(1/lambda)) %>%print()
+
+
+
+```
+Vemos que las predicciones de ambos modelos (rediciendo variabildidad con logartimo y con boxcox) está cercanas entre sí.
+
+## 8. Comparar las predicciones obtenidas con cada uno de los métodos con los valores
+## observados que habíamos reservado antes. Conclusiones. (0.5)
+
+```{r comparativa de modelos}
+
+autoplot(viajeros_train) +
+autolayer(forecast(fitvviajeros), series="manual", PI=FALSE) +
+autolayer(forecast(fitvviajeros2), series="automatico", PI=FALSE) +
+autolayer(exp(predi3$mean), series="Logaritmos")+
+autolayer((predi4$mean*lambda+1)^(1/lambda), series="Transformada")+
+ggtitle("Prediciones por diferentes modelos ") + xlab("mes") +
+ylab("numero") +
+guides(colour=guide_legend(title="Forecast"))
+```
+Visualmente es difícil distinguir.
+
+```{r calculando rmse}
+
+predicciones_prima<-as.data.frame(exp(predi3_prima$mean))
+rmse(predicciones_prima$x[1:12], serie_original_2019$Viajeros)
+
+predicciones<-as.data.frame(exp(predi3$mean))
+rmse(predicciones$x[1:12], serie_original_2019$Viajeros)
+
+predicciones_boxcox<-as.data.frame((predi4$mean*lambda+1)^(1/lambda))
+rmse(predicciones_boxcox$x[1:12], serie_original_2019$Viajeros)
+
+predicciones_prima_boxcox<-as.data.frame((predi4_prima$mean*lambda+1)^(1/lambda))
+rmse(predicciones_prima_boxcox$x[1:12], serie_original_2019$Viajeros)
+
+
+
+
+```
+Estos son los resultados de los 4 modelos:
+
+Los dos primeros modelos se obtenieron reduciendo la variabilidad a travé de una logaritmo. Los dos siguientes con una transformación con lambda.
+
+Recordemos que el modelo obtenido por auto arima con la transformación lambda obtuvo el menor AICc pero no el menor RMSE y más bien el modelo obtenido a mano con la transformación logarítmica obtuvo más AICc pero menor RMSE.
+
+Esto se puede deber a que el modelo es más complejo y el AICc lo penalizó por ello pero al final obtuvo más precisión.
+Se deberá ponderar complejidad con precisión para escoger el modelo.
+
+Se propone tomar el modelo auto arima con transformación logaritmica por que balancea complejidad con precisión. 
+
+Finalmente el modelo ARIMA escogido nos da mejor RMSE  8433.941 vs 9672.786 comparado con el de suavización exponenecial.  
